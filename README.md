@@ -67,7 +67,6 @@ The system includes pre-configured profiles for your primary brands and allows a
 
 | Brand ID | Brand Name | Industry / Focus | Theme Colors |
 | :--- | :--- | :--- | :--- |
-| `inoptra_digital` | **INOPTRA DIGITAL** | Digital Transformation, IT Services, Enterprise AI & Cloud Migration | Blue (`#0d6efd`) |
 | `eboatex_marine` | **EBOATEX MARINE TECHNOLOGIES** | Electric Boats, Naval Propulsion, Clean Maritime & Eco-Tourism | Teal (`#088395`) |
 | `apex_recruitment` | **Apex Recruitment** | Executive Search, Tech Hiring & Corporate Talent Acquisition | Emerald (`#198754`) |
 | `custom` | **Any Custom Brand** | Easily added via CLI or config file | Custom |
@@ -128,9 +127,6 @@ python main.py brands add --id my_brand --name "My Brand" --industry "E-Commerce
 
 ### 2. Generate Content & Creatives
 ```bash
-# Generate for INOPTRA DIGITAL
-python main.py generate --brand inoptra_digital --topic "Launch of our new AI Workflow Automation suite"
-
 # Generate for EBOATEX MARINE
 python main.py generate --brand eboatex_marine --topic "2026 Solar-Electric Luxury Cruiser with Zero Emissions"
 
@@ -138,12 +134,12 @@ python main.py generate --brand eboatex_marine --topic "2026 Solar-Electric Luxu
 python main.py generate --brand apex_recruitment --topic "Top 5 High-Demand Tech Leadership Roles in Q1"
 
 # Generate and publish immediately
-python main.py generate --brand inoptra_digital --topic "Cloud Cost Optimization Framework" --publish
+python main.py generate --brand eboatex_marine --topic "Zero Emission Electric Water Taxi Fleet" --publish
 ```
 
 ### 3. Generate a 7-Day Social Media Calendar
 ```bash
-python main.py calendar --brand inoptra_digital --days 7
+python main.py calendar --brand eboatex_marine --days 7
 ```
 *(Saved to `outputs/calendars/<brand>_calendar_<date>.json`)*
 
@@ -182,8 +178,8 @@ You can trigger generation and publishing directly from Make.com or n8n:
 - **Payload**:
 ```json
 {
-  "brand_id": "inoptra_digital",
-  "topic": "Announcing our new automated cloud migration assessment",
+  "brand_id": "eboatex_marine",
+  "topic": "Announcing our new zero-emission commercial passenger catamaran",
   "auto_publish": true
 }
 ```
@@ -203,7 +199,7 @@ Whenever a post is published, the complete multi-platform payload is forwarded t
 ```
 Social-Media-Automation-Architecture/
 ├── config/
-│   ├── brands.json          # Profiles for INOPTRA DIGITAL, EBOATEX, Apex Recruitment, etc.
+│   ├── brands.json          # Profiles for EBOATEX Marine, Apex Recruitment, etc.
 │   └── settings.py          # Settings, directory manager & env loader
 ├── core/
 │   ├── database.py          # SQLite engine (posts, queue, audit logs)

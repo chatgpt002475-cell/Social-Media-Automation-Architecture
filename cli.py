@@ -90,7 +90,7 @@ def add_brand(brand_id: str, name: str, industry: str, website: str, tone: str):
 # CONTENT GENERATION & PUBLISHING
 # -------------------------------------------------------------
 @cli.command("generate")
-@click.option("--brand", "-b", "brand_id", required=True, help="Brand ID (e.g. inoptra_digital, eboatex_marine, apex_recruitment)")
+@click.option("--brand", "-b", "brand_id", required=True, help="Brand ID (e.g. eboatex_marine, apex_recruitment)")
 @click.option("--topic", "-t", required=True, help="Product, service, or update description")
 @click.option("--platforms", "-p", default="facebook,instagram,linkedin,pinterest,olx,twitter", help="Comma-separated platforms")
 @click.option("--image", "-i", "image_path", default=None, help="Optional source image path")
@@ -268,7 +268,6 @@ def test_pipeline():
     click.echo("========================================================\n")
 
     test_cases = [
-        ("inoptra_digital", "Enterprise AI & Cloud Migration Suite for FinTech"),
         ("eboatex_marine", "Solar-Electric Commercial Passenger Catamaran 2026"),
         ("apex_recruitment", "Top 5 High-Demand Tech Leadership Roles Q1"),
     ]

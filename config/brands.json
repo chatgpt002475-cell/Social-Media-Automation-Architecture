@@ -1,43 +1,4 @@
 {
-  "inoptra_digital": {
-    "id": "inoptra_digital",
-    "name": "INOPTRA DIGITAL",
-    "tagline": "Empowering Enterprise Transformation Through Intelligent Technology",
-    "industry": "Digital Transformation, IT Services, Cloud & AI Automation",
-    "tone": "Innovative, authoritative, tech-forward, results-driven, enterprise-grade",
-    "target_audience": "Founders, CTOs, Enterprise Leaders, Digital Operations Managers, Scale-ups",
-    "keywords": [
-      "Digital Transformation",
-      "Enterprise Automation",
-      "Cloud Solutions",
-      "AI Workflow Integration",
-      "Custom Software Development",
-      "Scalable Architecture"
-    ],
-    "hashtags": [
-      "#InoptraDigital",
-      "#DigitalTransformation",
-      "#EnterpriseAI",
-      "#CloudComputing",
-      "#WorkflowAutomation",
-      "#TechInnovation",
-      "#FutureOfWork"
-    ],
-    "contact_info": {
-      "website": "https://inoptra.com",
-      "email": "contact@inoptra.com",
-      "phone": "+91-98765-43210",
-      "location": "Hyderabad / Bangalore, India"
-    },
-    "call_to_action": "Partner with INOPTRA DIGITAL to modernize your business systems. Book a free architectural consultation today at inoptra.com.",
-    "theme": {
-      "primary_color": "#0d6efd",
-      "secondary_color": "#0a58ca",
-      "accent_color": "#0dcaf0",
-      "background_color": "#0f172a",
-      "text_color": "#ffffff"
-    }
-  },
   "eboatex_marine": {
     "id": "eboatex_marine",
     "name": "EBOATEX MARINE TECHNOLOGIES",

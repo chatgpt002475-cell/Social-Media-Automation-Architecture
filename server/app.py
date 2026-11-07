@@ -99,7 +99,6 @@ DASHBOARD_HTML = """
             color: #f8fafc;
             box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
         }
-        .brand-badge-inoptra_digital { background-color: #2563eb; }
         .brand-badge-eboatex_marine { background-color: #0891b2; }
         .brand-badge-apex_recruitment { background-color: #16a34a; }
     </style>
@@ -393,7 +392,7 @@ def list_posts_api() -> Any:
 
 @app.route("/api/calendar", methods=["GET"])
 def get_calendar_api() -> Any:
-    brand_id = request.args.get("brand_id", "inoptra_digital")
+    brand_id = request.args.get("brand_id", "eboatex_marine")
     days = int(request.args.get("days", "7"))
     calendar = gemini_engine.generate_weekly_calendar(brand_id=brand_id, days=days)
     return jsonify({"brand_id": brand_id, "days": days, "calendar": calendar})
@@ -403,7 +402,7 @@ def get_calendar_api() -> Any:
 def generate_api() -> Any:
     """Generate social media post content using Gemini and optionally publish immediately."""
     payload = request.get_json() or {}
-    brand_id = payload.get("brand_id", "inoptra_digital")
+    brand_id = payload.get("brand_id", "eboatex_marine")
     topic = payload.get("topic", "")
     platforms = payload.get("platforms")
     publish_now = payload.get("publish_now", False)
@@ -529,7 +528,7 @@ def make_webhook_inbound() -> Any:
     logger.info(f"Received inbound webhook: {payload}")
 
     topic = payload.get("topic") or payload.get("title") or payload.get("prompt")
-    brand_id = payload.get("brand_id", "inoptra_digital")
+    brand_id = payload.get("brand_id", "eboatex_marine")
     auto_publish = payload.get("auto_publish", True)
 
     if not topic:
