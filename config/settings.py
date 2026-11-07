@@ -34,7 +34,7 @@ class Settings:
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     # Local Server
-    SERVER_HOST: str = os.getenv("SERVER_HOST", "127.0.0.1")
+    SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
     SERVER_PORT: int = int(os.getenv("SERVER_PORT", "5000"))
     SECRET_KEY: str = os.getenv("SECRET_KEY", "social-media-automation-secret")
     SCHEDULER_INTERVAL_SECONDS: int = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "30"))

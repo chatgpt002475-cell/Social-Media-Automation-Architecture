@@ -109,7 +109,8 @@ class ImageEngine:
 
             # Save JPEG with optimal compression
             img.save(str(out_path), "JPEG", quality=90)
-            generated_files[format_name] = str(out_path)
+            generated_files[format_name] = f"/outputs/images/{brand_id}/{out_filename}"
+            generated_files[f"{format_name}_local_path"] = str(out_path)
 
         return generated_files
 

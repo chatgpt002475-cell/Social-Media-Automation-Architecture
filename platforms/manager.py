@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from config.settings import settings
 from core.database import db
 from platforms.base import BasePlatformAdapter
 from platforms.linkedin import LinkedInAdapter
@@ -73,6 +74,10 @@ class PlatformManager:
                 media_path = images.get("pinterest") or images.get("square")
             else:
                 media_path = images.get("square") or images.get("landscape")
+
+            if media_path and not media_path.startswith("http"):
+                if media_path.startswith("/outputs/") or media_path.startswith("outputs/"):
+                    media_path = str((settings.BASE_DIR / media_path.lstrip("/")).resolve())
 
             try:
                 res = adapter.publish(post_data=post_data, media_path=media_path)

@@ -1,13 +1,16 @@
-"""Local Webhook Server, REST API, and Control Dashboard."""
+"""Local Webhook Server, REST API, and Interactive Control Dashboard."""
 from __future__ import annotations
 
 import json
 import logging
+import socket
+import sys
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, send_from_directory
 
 from config.settings import settings
 from core.database import db
@@ -15,12 +18,25 @@ from core.gemini_engine import gemini_engine
 from core.image_engine import image_engine
 from platforms.manager import platform_manager
 
+# Ensure UTF-8 output encoding across Windows shells
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = settings.SECRET_KEY
 
-# Minimalist, modern dark-mode responsive dashboard template
+# Serve static output files (generated images, OLX listings, calendars)
+@app.route("/outputs/<path:filename>")
+def serve_outputs(filename: str):
+    """Serve generated image assets and files."""
+    return send_from_directory(str(settings.OUTPUTS_DIR), filename)
+
+
 DASHBOARD_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -74,20 +90,6 @@ DASHBOARD_HTML = """
             border-top: 1px solid var(--card-border);
             vertical-align: middle;
         }
-        .badge-brand {
-            background-color: #3b82f6;
-            color: white;
-            font-weight: 500;
-        }
-        .platform-pill {
-            display: inline-block;
-            padding: 2px 8px;
-            font-size: 0.75rem;
-            border-radius: 12px;
-            margin-right: 4px;
-            background: #334155;
-            color: #e2e8f0;
-        }
         .form-control, .form-select {
             background-color: #0f172a;
             border: 1px solid var(--card-border);
@@ -99,29 +101,64 @@ DASHBOARD_HTML = """
             color: #f8fafc;
             box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
         }
-        .brand-badge-eboatex_marine { background-color: #0891b2; }
-        .brand-badge-apex_recruitment { background-color: #16a34a; }
+        .brand-badge-eboatex_marine { background-color: #0891b2; color: #fff; }
+        .brand-badge-apex_recruitment { background-color: #16a34a; color: #fff; }
+        .nav-tabs .nav-link {
+            color: var(--text-muted);
+            border: none;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-tabs .nav-link.active {
+            background: transparent;
+            color: var(--accent);
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        .preview-box {
+            background-color: #0b1120;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 15px;
+            white-space: pre-wrap;
+            font-family: inherit;
+            font-size: 0.9rem;
+            max-height: 380px;
+            overflow-y: auto;
+        }
+        .img-thumb-preview {
+            border-radius: 8px;
+            border: 1px solid var(--card-border);
+            transition: transform 0.2s;
+            cursor: pointer;
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+        }
+        .img-thumb-preview:hover {
+            transform: scale(1.03);
+            border-color: var(--accent);
+        }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg px-4 mb-4">
         <div class="container-fluid">
             <span class="navbar-brand text-white fw-bold d-flex align-items-center gap-2">
-                <i class="bi bi-robot text-info fs-4"></i> Social Media Automation Architecture
+                <i class="bi bi-robot text-info fs-4"></i> Social Media Automation Hub
             </span>
             <div class="d-flex align-items-center gap-3">
                 <span class="badge bg-dark border border-secondary text-light px-3 py-2">
-                    <i class="bi bi-cpu text-warning me-1"></i> Gemini: {{ 'Active' if gemini_active else 'Demo/Mock Mode' }}
+                    <i class="bi bi-cpu text-warning me-1"></i> Gemini: {{ 'Active' if gemini_active else 'Local Intelligent Fallback' }}
                 </span>
                 <span class="badge bg-dark border border-secondary text-light px-3 py-2">
-                    <i class="bi bi-clock text-info me-1"></i> Local Server: 127.0.0.1:{{ port }}
+                    <i class="bi bi-hdd-network text-info me-1"></i> Running on Port: {{ port }}
                 </span>
             </div>
         </div>
     </nav>
 
     <div class="container-fluid px-4">
-        <!-- Quick Stats Cards -->
+        <!-- Stats Row -->
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="card stat-card p-3">
@@ -160,7 +197,7 @@ DASHBOARD_HTML = """
                 <div class="card stat-card p-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <div class="text-muted small">DISPATCH ATTEMPTS</div>
+                            <div class="text-muted small">TOTAL DISPATCHES</div>
                             <div class="fs-3 fw-bold text-info">{{ stats.successful_publishes }}</div>
                         </div>
                         <i class="bi bi-broadcast text-info fs-1"></i>
@@ -170,7 +207,7 @@ DASHBOARD_HTML = """
         </div>
 
         <div class="row g-4">
-            <!-- Left: Quick Generator Form -->
+            <!-- Left: Generator Form -->
             <div class="col-lg-5">
                 <div class="card p-4 h-100">
                     <h5 class="fw-bold mb-3 d-flex align-items-center gap-2">
@@ -187,7 +224,7 @@ DASHBOARD_HTML = """
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-muted small">PRODUCT, SERVICE, OR UPDATE TOPIC</label>
-                            <textarea class="form-control" id="topicInput" rows="3" placeholder="e.g. Launch of our new automated AI workflow suite with instant CRM sync" required></textarea>
+                            <textarea class="form-control" id="topicInput" rows="3" placeholder="e.g. Introducing our 2026 Solar-Electric Luxury Passenger Vessel with zero carbon emissions" required></textarea>
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-muted small">TARGET PLATFORMS</label>
@@ -202,7 +239,7 @@ DASHBOARD_HTML = """
                         </div>
                         <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" id="publishNowCheck">
-                            <label class="form-check-label text-muted small" for="publishNowCheck">Auto-publish immediately across selected platforms</label>
+                            <label class="form-check-label text-muted small" for="publishNowCheck">Auto-publish immediately across selected channels</label>
                         </div>
                         <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold" id="submitBtn">
                             <i class="bi bi-lightning-charge me-1"></i> Generate & Distribute
@@ -212,19 +249,22 @@ DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- Right: Configured Brands & Platform Status -->
+            <!-- Right: Brand Cards & Publishing Channels -->
             <div class="col-lg-7">
                 <div class="card p-4 mb-4">
-                    <h5 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                        <i class="bi bi-briefcase text-primary"></i> Active Business Profiles
-                    </h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold m-0 d-flex align-items-center gap-2">
+                            <i class="bi bi-briefcase text-primary"></i> Active Business Profiles
+                        </h5>
+                    </div>
                     <div class="row g-3">
                         {% for b_id, b in brands.items() %}
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="p-3 rounded border border-secondary" style="background:#162032;">
                                 <div class="badge brand-badge-{{ b_id }} mb-2">{{ b.name }}</div>
-                                <div class="small text-muted mb-1">{{ b.industry }}</div>
-                                <div class="small text-info text-truncate">{{ b.contact_info.website }}</div>
+                                <div class="small text-muted mb-2">{{ b.industry }}</div>
+                                <div class="small text-info text-truncate"><i class="bi bi-globe me-1"></i>{{ b.contact_info.website }}</div>
+                                <div class="small text-muted text-truncate"><i class="bi bi-telephone me-1"></i>{{ b.contact_info.phone }}</div>
                             </div>
                         </div>
                         {% endfor %}
@@ -233,7 +273,7 @@ DASHBOARD_HTML = """
 
                 <div class="card p-4">
                     <h5 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                        <i class="bi bi-diagram-3 text-success"></i> Publishing Channels & Automation Engines
+                        <i class="bi bi-diagram-3 text-success"></i> Publishing Channels & Adapters
                     </h5>
                     <div class="d-flex flex-wrap gap-2">
                         {% for p_name, p_status in platform_status.items() %}
@@ -251,9 +291,12 @@ DASHBOARD_HTML = """
         <div class="card p-4 mt-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="fw-bold m-0 d-flex align-items-center gap-2">
-                    <i class="bi bi-clock-history text-info"></i> Recent Generated Posts & History
+                    <i class="bi bi-clock-history text-info"></i> Generated Posts & Catalogs
                 </h5>
-                <a href="/api/posts" target="_blank" class="btn btn-sm btn-outline-info">View Raw JSON API</a>
+                <div>
+                    <a href="/api/posts" target="_blank" class="btn btn-sm btn-outline-info me-2">Raw Posts JSON</a>
+                    <a href="/api/calendar?brand_id=eboatex_marine&days=7" target="_blank" class="btn btn-sm btn-outline-warning">View 7-Day Calendar</a>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table">
@@ -267,12 +310,12 @@ DASHBOARD_HTML = """
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="postsTableBody">
                         {% for post in recent_posts %}
                         <tr>
                             <td><code>{{ post.id }}</code></td>
                             <td><span class="badge brand-badge-{{ post.brand_id }}">{{ post.brand_id }}</span></td>
-                            <td class="text-truncate" style="max-width:320px;">{{ post.topic }}</td>
+                            <td class="text-truncate" style="max-width:300px;">{{ post.topic }}</td>
                             <td>
                                 <span class="badge {{ 'bg-success' if post.status == 'published' else ('bg-warning text-dark' if post.status == 'scheduled' else 'bg-secondary') }}">
                                     {{ post.status }}
@@ -280,6 +323,9 @@ DASHBOARD_HTML = """
                             </td>
                             <td class="small text-muted">{{ post.created_at }}</td>
                             <td>
+                                <button class="btn btn-sm btn-outline-info me-1" onclick="viewPost('{{ post.id }}')">
+                                    <i class="bi bi-eye"></i> View & Copy
+                                </button>
                                 <button class="btn btn-sm btn-outline-light" onclick="triggerPublish('{{ post.id }}')">
                                     <i class="bi bi-send"></i> Publish
                                 </button>
@@ -287,7 +333,7 @@ DASHBOARD_HTML = """
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">No posts generated yet. Use the generator above or CLI!</td>
+                            <td colspan="6" class="text-center text-muted py-4">No posts in database yet. Use the generator above!</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -296,13 +342,117 @@ DASHBOARD_HTML = """
         </div>
     </div>
 
+    <!-- Post Details Modal -->
+    <div class="modal fade" id="postModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content bg-dark text-white border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title fw-bold" id="modalPostTitle">Post Content & Creatives</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Nav Tabs -->
+                    <ul class="nav nav-tabs mb-3" id="postTab" role="tablist">
+                        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-fb">Facebook</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ig">Instagram</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-li">LinkedIn</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-olx">OLX Listing</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tw">Twitter/X</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-pin">Pinterest</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-img">Promotional Images</button></li>
+                    </ul>
+
+                    <!-- Tab Contents -->
+                    <div class="tab-content" id="postTabContent">
+                        <!-- Facebook -->
+                        <div class="tab-pane fade show active" id="tab-fb">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-info m-0">Facebook Post Copy</h6>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyText('fbText')"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                            </div>
+                            <div class="preview-box" id="fbText"></div>
+                        </div>
+
+                        <!-- Instagram -->
+                        <div class="tab-pane fade" id="tab-ig">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-info m-0">Instagram Caption & Hashtags</h6>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyText('igText')"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                            </div>
+                            <div class="preview-box" id="igText"></div>
+                            <div class="mt-3">
+                                <h6 class="text-warning small mb-1">CAROUSEL SLIDES / REEL SCRIPT CONCEPT</h6>
+                                <div class="preview-box" id="igSlides"></div>
+                            </div>
+                        </div>
+
+                        <!-- LinkedIn -->
+                        <div class="tab-pane fade" id="tab-li">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-info m-0">LinkedIn Article / Update</h6>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyText('liText')"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                            </div>
+                            <div class="preview-box" id="liText"></div>
+                        </div>
+
+                        <!-- OLX -->
+                        <div class="tab-pane fade" id="tab-olx">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-info m-0">OLX Classified Specification & Description</h6>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyText('olxText')"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                            </div>
+                            <div class="preview-box" id="olxText"></div>
+                        </div>
+
+                        <!-- Twitter -->
+                        <div class="tab-pane fade" id="tab-tw">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-info m-0">Twitter / X Post & Thread</h6>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyText('twText')"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                            </div>
+                            <div class="preview-box" id="twText"></div>
+                        </div>
+
+                        <!-- Pinterest -->
+                        <div class="tab-pane fade" id="tab-pin">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-info m-0">Pinterest Pin Details</h6>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyText('pinText')"><i class="bi bi-clipboard me-1"></i>Copy</button>
+                            </div>
+                            <div class="preview-box" id="pinText"></div>
+                        </div>
+
+                        <!-- Images -->
+                        <div class="tab-pane fade" id="tab-img">
+                            <h6 class="text-info mb-3">Auto-Generated Promotional Creatives (5 Aspect Ratios)</h6>
+                            <div class="row g-3" id="imagesContainer"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <span id="modalPostId" class="text-muted small me-auto"></span>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="modalPublishBtn"><i class="bi bi-send me-1"></i>Publish Across Channels</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let currentPost = null;
+        let postModal = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            postModal = new bootstrap.Modal(document.getElementById('postModal'));
+        });
+
         document.getElementById('genForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
             const alertBox = document.getElementById('genAlert');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing with AI...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Generating Content & Images...';
 
             const brand_id = document.getElementById('brandSelect').value;
             const topic = document.getElementById('topicInput').value;
@@ -317,10 +467,17 @@ DASHBOARD_HTML = """
                     body: JSON.stringify({brand_id, topic, platforms, publish_now})
                 });
                 const data = await res.json();
+                if(!res.ok) throw new Error(data.error || 'Server returned an error');
+
                 alertBox.style.display = 'block';
                 alertBox.className = 'alert alert-success';
-                alertBox.innerHTML = `<strong>Success!</strong> Post ID <code>${data.post_id}</code> generated and processed. Reloading...`;
-                setTimeout(() => window.location.reload(), 1500);
+                alertBox.innerHTML = `<strong>Success!</strong> Post ID <code>${data.post_id}</code> generated! Opening preview...`;
+
+                setTimeout(() => {
+                    viewPost(data.post_id);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i> Generate & Distribute';
+                }, 1000);
             } catch (err) {
                 alertBox.style.display = 'block';
                 alertBox.className = 'alert alert-danger';
@@ -329,6 +486,76 @@ DASHBOARD_HTML = """
                 btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i> Generate & Distribute';
             }
         });
+
+        async function viewPost(postId) {
+            try {
+                const res = await fetch(`/api/posts/${postId}`);
+                if(!res.ok) throw new Error('Post not found');
+                const post = await res.json();
+                currentPost = post;
+
+                document.getElementById('modalPostTitle').innerText = `${post.brand_id.toUpperCase()} — ${post.topic}`;
+                document.getElementById('modalPostId').innerText = `Post ID: ${post.id}`;
+
+                const c = post.content || {};
+
+                // Facebook
+                const fb = c.facebook || {};
+                document.getElementById('fbText').innerText = `${fb.headline || ''}\\n\\n${fb.caption || ''}\\n\\n${(fb.hashtags || []).join(' ')}`;
+
+                // Instagram
+                const ig = c.instagram || {};
+                document.getElementById('igText').innerText = `${ig.hook || ''}\\n\\n${ig.caption || ''}\\n\\n${(ig.hashtags || []).join(' ')}`;
+                document.getElementById('igSlides').innerText = `Slides:\\n• ${(ig.carousel_slides || []).join('\\n• ')}\\n\\nReel Idea:\\n${ig.reel_script_idea || 'N/A'}`;
+
+                // LinkedIn
+                const li = c.linkedin || {};
+                document.getElementById('liText').innerText = `${li.headline || ''}\\n\\n${li.post_body || ''}\\n\\nKey Takeaways:\\n• ${(li.key_takeaways || []).join('\\n• ')}\\n\\n${(li.hashtags || []).join(' ')}`;
+
+                // OLX
+                const olx = c.olx || {};
+                let specs = '';
+                if(olx.specifications) {
+                    specs = Object.entries(olx.specifications).map(([k, v]) => `• ${k}: ${v}`).join('\\n');
+                }
+                document.getElementById('olxText').innerText = `TITLE:\\n${olx.title || ''}\\n\\nCATEGORY: ${olx.category || ''}\\nPRICE: ${olx.price_guidance || ''}\\n\\nSPECIFICATIONS:\\n${specs}\\n\\nDESCRIPTION:\\n${olx.description || ''}`;
+
+                // Twitter
+                const tw = c.twitter || {};
+                document.getElementById('twText').innerText = `${tw.tweet || ''}\\n\\nFollow-up Thread:\\n${tw.thread_followup || ''}`;
+
+                // Pinterest
+                const pin = c.pinterest || {};
+                document.getElementById('pinText').innerText = `TITLE: ${pin.title || ''}\\nBOARD: ${pin.board || ''}\\n\\nDESCRIPTION:\\n${pin.description || ''}\\n\\nCTA: ${pin.call_to_action || ''}`;
+
+                // Images
+                const imgContainer = document.getElementById('imagesContainer');
+                imgContainer.innerHTML = '';
+                const imgs = post.images || {};
+                for(const [fmt, path] of Object.entries(imgs)) {
+                    if(fmt.includes('_local_path')) continue;
+                    const col = document.createElement('div');
+                    col.className = 'col-md-4';
+                    col.innerHTML = `
+                        <div class="card p-2 text-center" style="background:#111927;">
+                            <div class="small text-muted mb-1 text-uppercase">${fmt}</div>
+                            <a href="${path}" target="_blank">
+                                <img src="${path}" class="img-thumb-preview mb-2" alt="${fmt}">
+                            </a>
+                            <a href="${path}" download class="btn btn-xs btn-outline-info w-100">
+                                <i class="bi bi-download me-1"></i>Download
+                            </a>
+                        </div>
+                    `;
+                    imgContainer.appendChild(col);
+                }
+
+                document.getElementById('modalPublishBtn').onclick = () => triggerPublish(post.id);
+                postModal.show();
+            } catch(e) {
+                alert('Failed to load post: ' + e.message);
+            }
+        }
 
         async function triggerPublish(postId) {
             if(!confirm(`Publish post ${postId} now?`)) return;
@@ -339,11 +566,18 @@ DASHBOARD_HTML = """
                     body: JSON.stringify({post_id: postId})
                 });
                 const data = await res.json();
-                alert(`Published! Status: ${data.overall_status || 'OK'}`);
+                alert(`Dispatch completed! Status: ${data.overall_status || 'OK'}`);
                 window.location.reload();
             } catch(e) {
                 alert('Publish failed: ' + e.message);
             }
+        }
+
+        function copyText(elemId) {
+            const text = document.getElementById(elemId).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
         }
     </script>
 </body>
@@ -355,7 +589,7 @@ DASHBOARD_HTML = """
 def index() -> str:
     """Render the main control dashboard."""
     brands = settings.get_brands()
-    recent_posts = db.list_posts(limit=15)
+    recent_posts = db.list_posts(limit=25)
     stats = db.get_dashboard_stats()
     platform_status = platform_manager.get_platform_status()
     gemini_active = gemini_engine.is_configured()
@@ -373,12 +607,35 @@ def index() -> str:
 
 @app.route("/api/health", methods=["GET"])
 def health_check() -> Any:
-    return jsonify({"status": "healthy", "time": datetime.now().isoformat()})
+    return jsonify({
+        "status": "healthy",
+        "time": datetime.now().isoformat(),
+        "gemini_active": gemini_engine.is_configured(),
+        "database": str(settings.DB_PATH.exists()),
+    })
 
 
 @app.route("/api/brands", methods=["GET"])
 def get_brands_api() -> Any:
     return jsonify(settings.get_brands())
+
+
+def normalize_post_payload(post: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert local Windows filesystem image paths to browser-accessible /outputs/ URLs."""
+    post_copy = dict(post)
+    images = dict(post_copy.get("images") or {})
+    normalized_imgs = {}
+    for fmt, pth in images.items():
+        if not isinstance(pth, str):
+            continue
+        clean = pth.replace("\\", "/")
+        if "/outputs/" in clean:
+            clean = "/outputs/" + clean.split("/outputs/", 1)[1]
+        elif clean.startswith("outputs/"):
+            clean = "/" + clean
+        normalized_imgs[fmt] = clean
+    post_copy["images"] = normalized_imgs
+    return post_copy
 
 
 @app.route("/api/posts", methods=["GET"])
@@ -387,7 +644,15 @@ def list_posts_api() -> Any:
     status = request.args.get("status")
     limit = int(request.args.get("limit", "50"))
     posts = db.list_posts(brand_id=brand_id, status=status, limit=limit)
-    return jsonify(posts)
+    return jsonify([normalize_post_payload(p) for p in posts])
+
+
+@app.route("/api/posts/<post_id>", methods=["GET"])
+def get_post_detail_api(post_id: str) -> Any:
+    post = db.get_post(post_id)
+    if not post:
+        return jsonify({"error": f"Post '{post_id}' not found"}), 404
+    return jsonify(normalize_post_payload(post))
 
 
 @app.route("/api/calendar", methods=["GET"])
@@ -496,7 +761,6 @@ def schedule_api() -> Any:
         return jsonify({"error": "post_id is required"}), 400
 
     if not scheduled_time:
-        # Default to 10 minutes from now
         scheduled_time = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
 
     post_data = db.get_post(post_id)
@@ -525,8 +789,6 @@ def schedule_api() -> Any:
 def make_webhook_inbound() -> Any:
     """Inbound webhook receiver for Make.com / n8n triggers."""
     payload = request.get_json() or {}
-    logger.info(f"Received inbound webhook: {payload}")
-
     topic = payload.get("topic") or payload.get("title") or payload.get("prompt")
     brand_id = payload.get("brand_id", "eboatex_marine")
     auto_publish = payload.get("auto_publish", True)
@@ -534,7 +796,6 @@ def make_webhook_inbound() -> Any:
     if not topic:
         return jsonify({"error": "Topic/title payload required"}), 400
 
-    # Auto-generate & distribute
     post_id = f"webhook_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
     content = gemini_engine.generate_multiplatform_content(brand_id=brand_id, topic=topic)
     images = image_engine.process_image(brand_id=brand_id, post_id=post_id, banner_title=topic[:45])
@@ -564,13 +825,35 @@ def make_webhook_inbound() -> Any:
     )
 
 
+def find_available_port(host: str, start_port: int, max_attempts: int = 20) -> int:
+    """Find a guaranteed free port to avoid WinError 10048."""
+    check_host = "127.0.0.1" if host == "0.0.0.0" else host
+    for p in range(start_port, start_port + max_attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((check_host, p))
+                return p
+            except OSError:
+                continue
+    return start_port
+
+
 def run_server(host: str | None = None, port: int | None = None) -> None:
-    """Start local server."""
-    h = host or settings.SERVER_HOST
-    p = port or settings.SERVER_PORT
+    """Start local server with automatic port conflict resolution."""
+    raw_h = host or settings.SERVER_HOST or "0.0.0.0"
+    req_p = port or settings.SERVER_PORT or 5000
+    actual_p = find_available_port(raw_h, req_p)
+
+    settings.SERVER_PORT = actual_p
+
+    if actual_p != req_p:
+        print(f"[!] Note: Port {req_p} was in use. Automatically switched to free port {actual_p}.")
+
     print(f"\n========================================================")
     print(f"🚀 Social Media Automation Hub running locally!")
-    print(f"👉 Local Web Dashboard: http://{h}:{p}")
-    print(f"👉 REST API & Webhooks: http://{h}:{p}/api/generate")
+    print(f"👉 Local Web Dashboard: http://localhost:{actual_p}")
+    print(f"👉 Direct IPv4 Link:    http://127.0.0.1:{actual_p}")
+    print(f"👉 REST API & Webhooks: http://127.0.0.1:{actual_p}/api/generate")
     print(f"========================================================\n")
-    app.run(host=h, port=p, debug=False)
+
+    app.run(host=raw_h, port=actual_p, debug=False)
