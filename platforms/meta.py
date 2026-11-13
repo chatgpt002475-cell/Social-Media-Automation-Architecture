@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import requests
@@ -10,6 +11,34 @@ from config.settings import settings
 from platforms.base import BasePlatformAdapter
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_public_url(media_path: Optional[str]) -> Optional[str]:
+    """Ensure image is an accessible public HTTPS URL for Meta's servers.
+    If it's a local file, upload it temporarily to catbox so Meta Graph API can download it."""
+    if not media_path:
+        return None
+    if media_path.startswith("http://") or media_path.startswith("https://"):
+        return media_path
+
+    local_path = Path(media_path)
+    if not local_path.is_absolute():
+        local_path = (settings.BASE_DIR / media_path.lstrip("/")).resolve()
+
+    if local_path.exists() and local_path.is_file():
+        try:
+            with open(local_path, "rb") as f:
+                r = requests.post(
+                    "https://catbox.moe/user/api.php",
+                    data={"reqtype": "fileupload"},
+                    files={"fileToUpload": f},
+                    timeout=15,
+                )
+            if r.status_code == 200 and r.text.strip().startswith("http"):
+                return r.text.strip()
+        except Exception as e:
+            logger.warning(f"Failed to upload local image to public URL for Meta: {e}")
+    return None
 
 
 class FacebookAdapter(BasePlatformAdapter):
@@ -23,6 +52,38 @@ class FacebookAdapter(BasePlatformAdapter):
 
     def is_configured(self) -> bool:
         return bool(self.page_id and self.access_token)
+
+    def verify_connection(self) -> Dict[str, Any]:
+        """Verify Facebook Page API connection with Meta."""
+        if not self.is_configured():
+            return {
+                "connected": False,
+                "error": "FB_PAGE_ID or FB_PAGE_ACCESS_TOKEN not configured in .env",
+            }
+        url = f"https://graph.facebook.com/{self.api_version}/{self.page_id}"
+        params = {
+            "fields": "id,name,link",
+            "access_token": self.access_token,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            data = r.json()
+            if r.status_code == 200 and "id" in data:
+                return {
+                    "connected": True,
+                    "platform": "facebook",
+                    "id": data.get("id"),
+                    "name": data.get("name"),
+                    "link": data.get("link"),
+                }
+            return {
+                "connected": False,
+                "platform": "facebook",
+                "error": data.get("error", {}).get("message", "Verification failed"),
+                "raw": data,
+            }
+        except Exception as e:
+            return {"connected": False, "platform": "facebook", "error": str(e)}
 
     def publish(
         self,
@@ -45,6 +106,16 @@ class FacebookAdapter(BasePlatformAdapter):
         url = f"https://graph.facebook.com/{self.api_version}/{self.page_id}/feed"
         payload = {"message": full_text, "access_token": self.access_token}
 
+        # If image available, attach public URL
+        public_img = _ensure_public_url(media_path)
+        if public_img:
+            url = f"https://graph.facebook.com/{self.api_version}/{self.page_id}/photos"
+            payload = {
+                "caption": full_text,
+                "url": public_img,
+                "access_token": self.access_token,
+            }
+
         try:
             resp = requests.post(url, data=payload, timeout=20)
             data = resp.json()
@@ -52,7 +123,7 @@ class FacebookAdapter(BasePlatformAdapter):
                 return {
                     "status": "success",
                     "platform": self.platform_name,
-                    "post_id": data.get("id"),
+                    "post_id": data.get("id") or data.get("post_id"),
                     "response": data,
                 }
             return {
@@ -77,6 +148,39 @@ class InstagramAdapter(BasePlatformAdapter):
     def is_configured(self) -> bool:
         return bool(self.ig_user_id and self.access_token)
 
+    def verify_connection(self) -> Dict[str, Any]:
+        """Verify Instagram API connection with Meta."""
+        if not self.is_configured():
+            return {
+                "connected": False,
+                "error": "IG_USER_ID or IG_ACCESS_TOKEN not configured in .env",
+            }
+        url = f"https://graph.facebook.com/{self.api_version}/{self.ig_user_id}"
+        params = {
+            "fields": "id,username,name,profile_picture_url,followers_count",
+            "access_token": self.access_token,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            data = r.json()
+            if r.status_code == 200 and "id" in data:
+                return {
+                    "connected": True,
+                    "platform": "instagram",
+                    "id": data.get("id"),
+                    "username": data.get("username"),
+                    "name": data.get("name"),
+                    "profile_picture_url": data.get("profile_picture_url"),
+                }
+            return {
+                "connected": False,
+                "platform": "instagram",
+                "error": data.get("error", {}).get("message", "Verification failed"),
+                "raw": data,
+            }
+        except Exception as e:
+            return {"connected": False, "platform": "instagram", "error": str(e)}
+
     def publish(
         self,
         post_data: Dict[str, Any],
@@ -99,26 +203,35 @@ class InstagramAdapter(BasePlatformAdapter):
                 },
             }
 
+        public_img_url = _ensure_public_url(media_path)
+        if not public_img_url:
+            return {
+                "status": "failed",
+                "platform": self.platform_name,
+                "error": "Meta Instagram Graph API requires an image attachment. No valid image was generated or accessible.",
+            }
+
         # Live Instagram Graph API container creation & publishing
         try:
             # Step 1: Create media container
             container_url = f"https://graph.facebook.com/{self.api_version}/{self.ig_user_id}/media"
             params = {
+                "image_url": public_img_url,
                 "caption": full_caption,
                 "access_token": self.access_token,
             }
-            if media_path and media_path.startswith("http"):
-                params["image_url"] = media_path
 
-            resp = requests.post(container_url, data=params, timeout=20)
+            resp = requests.post(container_url, data=params, timeout=25)
             res_data = resp.json()
             creation_id = res_data.get("id")
 
             if not creation_id:
+                err_detail = res_data.get("error", {}).get("message", str(res_data))
                 return {
                     "status": "failed",
                     "platform": self.platform_name,
-                    "error": res_data.get("error", "Container creation failed"),
+                    "error": f"Container creation failed: {err_detail}",
+                    "raw": res_data,
                 }
 
             # Step 2: Publish media container
@@ -128,12 +241,22 @@ class InstagramAdapter(BasePlatformAdapter):
             pub_resp = requests.post(
                 publish_url,
                 data={"creation_id": creation_id, "access_token": self.access_token},
-                timeout=20,
+                timeout=25,
             )
+            pub_data = pub_resp.json()
+            if pub_resp.status_code == 200 and "id" in pub_data:
+                return {
+                    "status": "success",
+                    "platform": self.platform_name,
+                    "instagram_post_id": pub_data.get("id"),
+                    "image_url": public_img_url,
+                    "response": pub_data,
+                }
             return {
-                "status": "success",
+                "status": "failed",
                 "platform": self.platform_name,
-                "response": pub_resp.json(),
+                "error": pub_data.get("error", {}).get("message", "Publishing failed"),
+                "raw": pub_data,
             }
         except Exception as e:
             return {"status": "failed", "platform": self.platform_name, "error": str(e)}

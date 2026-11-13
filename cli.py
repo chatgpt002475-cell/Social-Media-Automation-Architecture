@@ -21,6 +21,7 @@ from core.database import db
 from core.gemini_engine import gemini_engine
 from core.image_engine import image_engine
 from core.scheduler import scheduler
+from core.instagram_extractor import instagram_extractor
 from platforms.manager import platform_manager
 from server.app import run_server
 
@@ -308,5 +309,127 @@ def test_pipeline():
     click.secho("\n[SUCCESS] ALL PIPELINE TESTS PASSED SUCCESSFULLY!\n", fg="green", bold=True)
 
 
+# -------------------------------------------------------------
+# INSTAGRAM POST EXTRACTION
+# -------------------------------------------------------------
+@cli.group()
+def extract():
+    """Extract and analyze social media posts matching text or keywords."""
+    pass
+
+
+@extract.command("instagram")
+@click.option("--query", "-q", required=True, help="Text, keywords, or topic to search for in captions")
+@click.option("--profiles", "-p", default="", help="Comma-separated public profile handles (e.g. github,candela_speed_boat)")
+@click.option("--hashtag", "-h", default="", help="Optional specific hashtag (e.g. electricboats)")
+@click.option("--max-posts", "-m", default=10, type=int, help="Maximum matching posts to extract")
+def extract_instagram(query: str, profiles: str, hashtag: str, max_posts: int):
+    """Extract public Instagram posts based on text query, profiles, or hashtags."""
+    profile_list = [p.strip() for p in profiles.split(",") if p.strip()] if profiles else None
+    tag = hashtag.strip() if hashtag else None
+
+    click.echo("\n" + "=" * 65)
+    click.secho(f"[*] Starting Instagram Post Extraction for query: '{query}'", fg="cyan", bold=True)
+    if profile_list:
+        click.echo(f"[*] Target Profiles: {', '.join(profile_list)}")
+    if tag:
+        click.echo(f"[*] Target Hashtag: #{tag.lstrip('#')}")
+    click.echo(f"[*] Max Matches: {max_posts}")
+    click.echo("=" * 65)
+
+    res = instagram_extractor.extract(
+        query=query,
+        profiles=profile_list,
+        hashtag=tag,
+        max_posts=max_posts,
+        save_to_database=True,
+        export_csv=True,
+        export_json=True,
+    )
+
+    posts = res.get("posts", [])
+    if not posts:
+        click.secho("\n[!] No matching posts found or source access was limited.", fg="yellow")
+        if res.get("errors"):
+            for err in res["errors"]:
+                click.echo(f"    - {err}")
+        click.echo(f"\nTip: {res.get('note')}\n")
+        return
+
+    click.secho(f"\n[+] Successfully extracted {len(posts)} post(s) matching '{query}'!", fg="green", bold=True)
+    click.echo(f"[+] Saved to SQLite Database: {res.get('saved_to_db')} post(s)")
+    if res.get("csv_file"):
+        click.echo(f"[+] CSV Export:  {res['csv_file']}")
+    if res.get("json_file"):
+        click.echo(f"[+] JSON Export: {res['json_file']}")
+
+    click.echo("\n" + "-" * 65)
+    for idx, p in enumerate(posts, start=1):
+        click.secho(f"[{idx}] @{p.get('owner_username')} | Match: '{p.get('match_keyword')}' (Score: {p.get('match_score')})", fg="yellow", bold=True)
+        caption_snip = (p.get("caption") or "").replace("\n", " ").strip()
+        if len(caption_snip) > 120:
+            caption_snip = caption_snip[:117] + "..."
+        click.echo(f"    Caption:  {caption_snip}")
+        click.echo(f"    URL:      {p.get('url')}")
+        click.echo(f"    Stats:    ❤️ {p.get('likes_count')} likes | 💬 {p.get('comments_count')} comments | 📅 {p.get('post_timestamp')}")
+        click.echo("-" * 65)
+
+
+@extract.command("list")
+@click.option("--query", "-q", default=None, help="Filter stored posts by text keyword")
+@click.option("--limit", "-l", default=20, type=int, help="Limit number of posts")
+def list_extracted(query: str | None, limit: int):
+    """List posts previously extracted and stored in the local SQLite database."""
+    posts = db.list_extracted_posts(query=query, limit=limit)
+    click.echo("\n" + "=" * 65)
+    click.secho(f"DATABASE: EXTRACTED INSTAGRAM POSTS ({len(posts)} found)", fg="cyan", bold=True)
+    click.echo("=" * 65)
+
+    if not posts:
+        click.echo("No extracted posts found in database.")
+        return
+
+    for idx, p in enumerate(posts, start=1):
+        click.secho(f"[{idx}] ID: {p.get('id')} | @{p.get('owner_username')} | Date: {p.get('post_timestamp')}", fg="yellow")
+        caption_snip = (p.get("caption") or "").replace("\n", " ").strip()
+        if len(caption_snip) > 100:
+            caption_snip = caption_snip[:97] + "..."
+        click.echo(f"    Caption: {caption_snip}")
+        click.echo(f"    Match:   {p.get('match_keyword')} (from query '{p.get('source_query')}')")
+        click.echo(f"    URL:     {p.get('url')}")
+        click.echo("-" * 65)
+
+
+@cli.command("test-meta")
+def test_meta():
+    """Verify live connection to Meta (Facebook & Instagram) Graph API."""
+    from platforms.meta import FacebookAdapter, InstagramAdapter
+
+    click.echo("\n========================================================")
+    click.echo("[META] VERIFYING FACEBOOK & INSTAGRAM GRAPH API")
+    click.echo("========================================================\n")
+
+    fb = FacebookAdapter()
+    click.secho("[1] Facebook Page Status:", fg="cyan", bold=True)
+    fb_res = fb.verify_connection()
+    if fb_res.get("connected"):
+        click.secho(f"  [+] Connected to Page: {fb_res.get('name')} (ID: {fb_res.get('id')})", fg="green")
+    else:
+        click.secho(f"  [-] Not Connected: {fb_res.get('error')}", fg="yellow")
+
+    ig = InstagramAdapter()
+    click.echo()
+    click.secho("[2] Instagram Business / Professional Account Status:", fg="magenta", bold=True)
+    ig_res = ig.verify_connection()
+    if ig_res.get("connected"):
+        click.secho(f"  [+] Connected to Instagram: @{ig_res.get('username')} ({ig_res.get('name')})", fg="green")
+        click.echo(f"      Instagram ID: {ig_res.get('id')}")
+    else:
+        click.secho(f"  [-] Not Connected: {ig_res.get('error')}", fg="yellow")
+
+    click.echo("\n" + "=" * 55 + "\n")
+
+
 if __name__ == "__main__":
     cli()
+

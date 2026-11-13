@@ -17,6 +17,7 @@ from config.settings import settings
 from core.database import db
 from core.gemini_engine import gemini_engine
 from core.image_engine import image_engine
+from core.instagram_extractor import instagram_extractor
 from platforms.manager import platform_manager
 
 # Ensure UTF-8 output encoding across Windows shells
@@ -481,7 +482,13 @@ DASHBOARD_HTML = """
 
                         <!-- Meta: FB & IG -->
                         <div class="card p-3 mb-3 border-secondary" style="background:#111927;">
-                            <h6 class="text-primary fw-bold mb-2"><i class="bi bi-facebook me-1"></i> Meta (Facebook Page & Instagram Business)</h6>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-primary fw-bold m-0"><i class="bi bi-facebook me-1"></i> Meta (Facebook Page & Instagram Business)</h6>
+                                <button type="button" class="btn btn-sm btn-outline-info" id="verifyMetaBtn" onclick="verifyMeta()">
+                                    <i class="bi bi-shield-check me-1"></i> Test Meta API
+                                </button>
+                            </div>
+                            <div id="metaStatusAlert" class="mb-2 small" style="display:none;"></div>
                             <div class="row g-2 mb-2">
                                 <div class="col-md-6">
                                     <label class="form-label text-light small">Facebook Page ID (FB_PAGE_ID)</label>
@@ -770,6 +777,33 @@ DASHBOARD_HTML = """
                 alertBox.innerText = 'Error saving credentials: ' + e.message;
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-save me-1"></i> Save Credentials';
+            }
+        }
+
+        async function verifyMeta() {
+            const btn = document.getElementById('verifyMetaBtn');
+            const alertBox = document.getElementById('metaStatusAlert');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Testing...';
+            try {
+                const res = await fetch('/api/settings/verify-meta');
+                const data = await res.json();
+                alertBox.style.display = 'block';
+                let fbHtml = data.facebook.connected ?
+                    `<div class="text-success"><i class="bi bi-check-circle-fill me-1"></i><strong>Facebook Page:</strong> Connected (${data.facebook.name})</div>` :
+                    `<div class="text-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Facebook:</strong> ${data.facebook.error}</div>`;
+                let igHtml = data.instagram.connected ?
+                    `<div class="text-success mt-1"><i class="bi bi-check-circle-fill me-1"></i><strong>Instagram:</strong> Connected (@${data.instagram.username} - ${data.instagram.name})</div>` :
+                    `<div class="text-warning mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Instagram:</strong> ${data.instagram.error}</div>`;
+                alertBox.className = 'alert alert-dark p-2 border-secondary';
+                alertBox.innerHTML = fbHtml + igHtml;
+            } catch(e) {
+                alertBox.style.display = 'block';
+                alertBox.className = 'alert alert-danger p-2';
+                alertBox.innerText = 'Test request failed: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-shield-check me-1"></i> Test Meta API';
             }
         }
     </script>
@@ -1096,6 +1130,56 @@ def update_credentials_api() -> Any:
     platform_manager.__init__()
 
     return jsonify({"status": "success", "message": "Credentials updated successfully"})
+
+
+# -------------------------------------------------------------
+# POST EXTRACTION REST APIS
+# -------------------------------------------------------------
+@app.route("/api/extract/posts", methods=["GET"])
+def get_extracted_posts_api() -> Any:
+    """Get previously extracted social media posts from the SQLite database."""
+    query = request.args.get("query")
+    limit = int(request.args.get("limit", 50))
+    posts = db.list_extracted_posts(query=query, limit=limit)
+    return jsonify({"status": "success", "count": len(posts), "posts": posts})
+
+
+@app.route("/api/extract/instagram", methods=["POST"])
+def extract_instagram_api() -> Any:
+    """Extract Instagram posts matching text query, profiles, or hashtags."""
+    payload = request.get_json() or {}
+    query = (payload.get("query") or "").strip()
+
+    if not query:
+        return jsonify({"status": "error", "message": "'query' parameter is required"}), 400
+
+    profiles = payload.get("profiles")
+    if isinstance(profiles, str):
+        profiles = [p.strip() for p in profiles.split(",") if p.strip()]
+
+    hashtag = payload.get("hashtag")
+    max_posts = int(payload.get("max_posts", 10))
+
+    result = instagram_extractor.extract(
+        query=query,
+        profiles=profiles,
+        hashtag=hashtag,
+        max_posts=max_posts,
+        save_to_database=True,
+        export_csv=True,
+        export_json=True,
+    )
+
+    return jsonify(result)
+
+
+@app.route("/api/settings/verify-meta", methods=["GET"])
+def verify_meta_api() -> Any:
+    """Check live connection status to Meta Graph API for Facebook & Instagram."""
+    from platforms.meta import FacebookAdapter, InstagramAdapter
+    fb = FacebookAdapter().verify_connection()
+    ig = InstagramAdapter().verify_connection()
+    return jsonify({"facebook": fb, "instagram": ig})
 
 
 def find_available_port(host: str, start_port: int, max_attempts: int = 20) -> int:
