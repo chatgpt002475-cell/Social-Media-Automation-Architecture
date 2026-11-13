@@ -215,7 +215,7 @@ DASHBOARD_HTML = """
                     </h5>
                     <form id="genForm">
                         <div class="mb-3">
-                            <label class="form-label text-muted small">SELECT BRAND PROFILE</label>
+                            <label class="form-label text-light fw-semibold small">SELECT BRAND PROFILE</label>
                             <select class="form-select" id="brandSelect" required>
                                 {% for b_id, b in brands.items() %}
                                 <option value="{{ b_id }}">{{ b.name }} ({{ b.industry }})</option>
@@ -223,11 +223,19 @@ DASHBOARD_HTML = """
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-muted small">PRODUCT, SERVICE, OR UPDATE TOPIC</label>
+                            <label class="form-label text-light fw-semibold small">PRODUCT, SERVICE, OR CONTENT UPDATE TOPIC</label>
                             <textarea class="form-control" id="topicInput" rows="3" placeholder="e.g. Introducing our 2026 Solar-Electric Luxury Passenger Vessel with zero carbon emissions" required></textarea>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-muted small">TARGET PLATFORMS</label>
+                            <label class="form-label text-light fw-semibold small">WRITING STYLE / CASING</label>
+                            <select class="form-select" id="casingSelect">
+                                <option value="standard">Standard Professional (Capitalized)</option>
+                                <option value="small_letters">small letters (casual aesthetic / all lowercase)</option>
+                                <option value="punchy">Punchy & Bold (Promotional Hook)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-light fw-semibold small">TARGET PLATFORMS</label>
                             <div class="d-flex flex-wrap gap-2">
                                 <label class="btn btn-sm btn-outline-secondary text-white"><input type="checkbox" name="plat" value="facebook" checked> Facebook</label>
                                 <label class="btn btn-sm btn-outline-secondary text-white"><input type="checkbox" name="plat" value="instagram" checked> Instagram</label>
@@ -237,9 +245,17 @@ DASHBOARD_HTML = """
                                 <label class="btn btn-sm btn-outline-secondary text-white"><input type="checkbox" name="plat" value="twitter" checked> Twitter/X</label>
                             </div>
                         </div>
-                        <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="publishNowCheck">
-                            <label class="form-check-label text-muted small" for="publishNowCheck">Auto-publish immediately across selected channels</label>
+                        <div class="card p-3 mb-3 border-secondary" style="background: #111927;">
+                            <div class="form-check form-switch mb-1">
+                                <input class="form-check-input" type="checkbox" id="publishNowCheck">
+                                <label class="form-check-label text-white fw-bold" for="publishNowCheck">
+                                    Auto-publish immediately across selected channels
+                                </label>
+                            </div>
+                            <div class="small mt-1" style="color: #cbd5e1; font-size: 0.8rem; line-height: 1.4;">
+                                <i class="bi bi-shield-check text-info me-1"></i>
+                                <strong>Account Safety:</strong> Without real API credentials in <code>.env</code>, dispatches run in <strong>Safe Local Mock Mode</strong> so your actual profiles are never touched.
+                            </div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold" id="submitBtn">
                             <i class="bi bi-lightning-charge me-1"></i> Generate & Distribute
@@ -456,6 +472,7 @@ DASHBOARD_HTML = """
 
             const brand_id = document.getElementById('brandSelect').value;
             const topic = document.getElementById('topicInput').value;
+            const casing = document.getElementById('casingSelect').value;
             const publish_now = document.getElementById('publishNowCheck').checked;
             const checkboxes = document.querySelectorAll('input[name="plat"]:checked');
             const platforms = Array.from(checkboxes).map(c => c.value);
@@ -464,7 +481,7 @@ DASHBOARD_HTML = """
                 const res = await fetch('/api/generate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({brand_id, topic, platforms, publish_now})
+                    body: JSON.stringify({brand_id, topic, platforms, publish_now, casing})
                 });
                 const data = await res.json();
                 if(!res.ok) throw new Error(data.error || 'Server returned an error');
@@ -679,13 +696,32 @@ def generate_api() -> Any:
 
     post_id = f"post_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:6]}"
 
+    casing = payload.get("casing", "standard")
+    extra_instructions = ""
+    if casing == "small_letters":
+        extra_instructions = "Write all captions, hooks, and hashtags strictly in lowercase / small letters (casual aesthetic)."
+    elif casing == "punchy":
+        extra_instructions = "Write in high-energy, punchy, promotional style."
+
     # Step 1: AI Content Generation with Gemini
     content = gemini_engine.generate_multiplatform_content(
         brand_id=brand_id,
         topic=topic,
         platforms=platforms,
         language=language,
+        extra_instructions=extra_instructions,
     )
+
+    if casing == "small_letters":
+        def apply_lowercase(data):
+            if isinstance(data, str):
+                return data.lower()
+            elif isinstance(data, list):
+                return [apply_lowercase(x) for x in data]
+            elif isinstance(data, dict):
+                return {k: apply_lowercase(v) for k, v in data.items()}
+            return data
+        content = apply_lowercase(content)
 
     # Step 2: Auto-resize and generate promotional creatives
     img_design = content.get("image_design", {})
