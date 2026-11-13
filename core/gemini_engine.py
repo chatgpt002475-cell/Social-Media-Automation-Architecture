@@ -162,6 +162,7 @@ BRAND PROFILE:
 - Brand Tone: {brand['tone']}
 - Target Audience: {brand['target_audience']}
 - Website: {brand.get('contact_info', {}).get('website', '')}
+- Email: {brand.get('contact_info', {}).get('email', '')}
 - Phone/Contact: {brand.get('contact_info', {}).get('phone', '')}
 - Standard CTA: {brand.get('call_to_action', '')}
 - Default Brand Hashtags: {", ".join(brand.get('hashtags', []))}
@@ -272,8 +273,11 @@ Return ONLY a valid JSON object matching this structure (no markdown formatting,
         b_name = brand["name"]
         contact = brand.get("contact_info", {})
         website = contact.get("website", "https://example.com")
+        email = contact.get("email", "")
         phone = contact.get("phone", "+91-98765-00000")
         hashtags = brand.get("hashtags", [])
+
+        email_line = f"📧 Email: {email}\n" if email else ""
 
         return {
             "topic": topic,
@@ -292,6 +296,7 @@ Return ONLY a valid JSON object matching this structure (no markdown formatting,
                     f"• Tailored to modern operational demands\n"
                     f"• Backed by full support from our expert team\n\n"
                     f"👉 Learn more or get in touch: {website}\n"
+                    f"{email_line}"
                     f"📞 Contact our team: {phone}"
                 ),
                 "hashtags": hashtags[:6],
@@ -378,6 +383,7 @@ Return ONLY a valid JSON object matching this structure (no markdown formatting,
                     f"- On-time delivery and professional deployment\n"
                     f"- Dedicated account specialist and technical support\n\n"
                     f"Contact directly for quotation, brochure, and immediate availability:\n"
+                    f"Email: {email}\n"
                     f"Phone/WhatsApp: {phone}\n"
                     f"Official Website: {website}"
                 ),

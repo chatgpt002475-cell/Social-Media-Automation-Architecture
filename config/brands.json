@@ -40,8 +40,8 @@
   },
   "apex_recruitment": {
     "id": "apex_recruitment",
-    "name": "Apex Recruitment",
-    "tagline": "Connecting Elite Talent With World-Class Opportunities",
+    "name": "Apex Recruitment & Manpower",
+    "tagline": "Connecting Elite Talent & Manpower With World-Class Opportunities",
     "industry": "Executive Search, Corporate Recruitment, Technical Staffing & HR Consulting",
     "tone": "Professional, empowering, high-integrity, encouraging, talent-centric",
     "target_audience": "Mid-to-Senior Tech Professionals, Hiring Executives, HR Leaders, Fast-growing Tech Startups",
@@ -49,12 +49,14 @@
       "Executive Search",
       "Tech Hiring",
       "Talent Acquisition",
+      "Manpower Staffing",
       "Leadership Staffing",
       "Career Growth",
       "Global Recruitment"
     ],
     "hashtags": [
       "#ApexRecruitment",
+      "#ApexManpower",
       "#HiringNow",
       "#ExecutiveSearch",
       "#TechCareers",
@@ -62,13 +64,20 @@
       "#LeadershipHiring",
       "#CareerOpportunity"
     ],
+    "social_accounts": {
+      "email": "apexrecmanpow@gmail.com",
+      "instagram_handle": "@apexrecmanpow",
+      "facebook_page": "apexrecmanpow",
+      "linkedin_company": "apexrecmanpow",
+      "olx_account": "apexrecmanpow@gmail.com"
+    },
     "contact_info": {
       "website": "https://apexrecruitment.com",
-      "email": "careers@apexrecruitment.com",
+      "email": "apexrecmanpow@gmail.com",
       "phone": "+91-98765-88990",
       "location": "Mumbai / Remote, India"
     },
-    "call_to_action": "Looking to hire top 1% talent or take the next leap in your career? Connect with Apex Recruitment at apexrecruitment.com.",
+    "call_to_action": "Looking to hire top talent or need reliable manpower staffing? Contact Apex Recruitment & Manpower at apexrecmanpow@gmail.com or visit apexrecruitment.com.",
     "theme": {
       "primary_color": "#198754",
       "secondary_color": "#146c43",
