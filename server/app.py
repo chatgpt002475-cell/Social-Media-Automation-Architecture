@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import sys
 from datetime import datetime, timedelta
@@ -147,6 +148,9 @@ DASHBOARD_HTML = """
                 <i class="bi bi-robot text-info fs-4"></i> Social Media Automation Hub
             </span>
             <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-sm btn-outline-info fw-semibold" data-bs-toggle="modal" data-bs-target="#accountsModal">
+                    <i class="bi bi-key-fill me-1"></i> Connect Accounts & Keys
+                </button>
                 <span class="badge bg-dark border border-secondary text-light px-3 py-2">
                     <i class="bi bi-cpu text-warning me-1"></i> Gemini: {{ 'Active' if gemini_active else 'Local Intelligent Fallback' }}
                 </span>
@@ -449,6 +453,121 @@ DASHBOARD_HTML = """
                     <span id="modalPostId" class="text-muted small me-auto"></span>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="button" class="btn btn-primary" id="modalPublishBtn"><i class="bi bi-send me-1"></i>Publish Across Channels</button>
+    <!-- Connect Accounts Modal -->
+    <div class="modal fade" id="accountsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content bg-dark text-white border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title fw-bold d-flex align-items-center gap-2">
+                        <i class="bi bi-key-fill text-info"></i> Connect Social Accounts & API Credentials
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">
+                        Enter your platform IDs and access tokens below to enable live direct publishing. All credentials are saved strictly on your local machine in <code>.env</code>.
+                    </p>
+
+                    <form id="credsForm">
+                        <!-- Gemini -->
+                        <div class="card p-3 mb-3 border-secondary" style="background:#111927;">
+                            <h6 class="text-warning fw-bold mb-2"><i class="bi bi-cpu me-1"></i> Google Gemini AI</h6>
+                            <div class="mb-2">
+                                <label class="form-label text-light small">GEMINI_API_KEY</label>
+                                <input type="password" class="form-control form-control-sm" id="cred_GEMINI_API_KEY" placeholder="AIzaSy...">
+                                <div class="form-text text-muted small">Get your free key from <a href="https://aistudio.google.com/" target="_blank" class="text-info">Google AI Studio</a>.</div>
+                            </div>
+                        </div>
+
+                        <!-- Meta: FB & IG -->
+                        <div class="card p-3 mb-3 border-secondary" style="background:#111927;">
+                            <h6 class="text-primary fw-bold mb-2"><i class="bi bi-facebook me-1"></i> Meta (Facebook Page & Instagram Business)</h6>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Facebook Page ID (FB_PAGE_ID)</label>
+                                    <input type="text" class="form-control form-control-sm" id="cred_FB_PAGE_ID" placeholder="e.g. 109823475923847">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Facebook Page Access Token</label>
+                                    <input type="password" class="form-control form-control-sm" id="cred_FB_PAGE_ACCESS_TOKEN" placeholder="EAAG...">
+                                </div>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Instagram User ID (IG_USER_ID)</label>
+                                    <input type="text" class="form-control form-control-sm" id="cred_IG_USER_ID" placeholder="e.g. 17841400000000000">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Instagram Access Token</label>
+                                    <input type="password" class="form-control form-control-sm" id="cred_IG_ACCESS_TOKEN" placeholder="EAAG...">
+                                </div>
+                            </div>
+                            <div class="form-text text-muted small mt-2">Found in your Meta App at <a href="https://developers.facebook.com/" target="_blank" class="text-info">Meta for Developers</a> under Graph API Explorer.</div>
+                        </div>
+
+                        <!-- LinkedIn -->
+                        <div class="card p-3 mb-3 border-secondary" style="background:#111927;">
+                            <h6 class="text-info fw-bold mb-2"><i class="bi bi-linkedin me-1"></i> LinkedIn Company / Profile</h6>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">LinkedIn Access Token</label>
+                                    <input type="password" class="form-control form-control-sm" id="cred_LINKEDIN_ACCESS_TOKEN" placeholder="AQV...">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">LinkedIn Author URN</label>
+                                    <input type="text" class="form-control form-control-sm" id="cred_LINKEDIN_AUTHOR_URN" placeholder="urn:li:organization:12345 or urn:li:person:67890">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Webhooks -->
+                        <div class="card p-3 mb-3 border-secondary" style="background:#111927;">
+                            <h6 class="text-success fw-bold mb-2"><i class="bi bi-diagram-3 me-1"></i> Automation Webhook (Make.com / n8n / Zapier)</h6>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Make.com Webhook URL</label>
+                                    <input type="url" class="form-control form-control-sm" id="cred_MAKE_WEBHOOK_URL" placeholder="https://hook.eu1.make.com/...">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">n8n Webhook URL</label>
+                                    <input type="url" class="form-control form-control-sm" id="cred_N8N_WEBHOOK_URL" placeholder="http://localhost:5678/webhook/...">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Twitter & Pinterest -->
+                        <div class="card p-3 mb-2 border-secondary" style="background:#111927;">
+                            <h6 class="text-light fw-bold mb-2"><i class="bi bi-twitter-x me-1"></i> Twitter (X) & Pinterest</h6>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Twitter API Key</label>
+                                    <input type="password" class="form-control form-control-sm" id="cred_TWITTER_API_KEY">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Twitter Access Token</label>
+                                    <input type="password" class="form-control form-control-sm" id="cred_TWITTER_ACCESS_TOKEN">
+                                </div>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Pinterest Access Token</label>
+                                    <input type="password" class="form-control form-control-sm" id="cred_PINTEREST_ACCESS_TOKEN">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-light small">Pinterest Board ID</label>
+                                    <input type="text" class="form-control form-control-sm" id="cred_PINTEREST_BOARD_ID">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="credsAlert" class="mt-3" style="display:none;"></div>
+                    </form>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="saveCredsBtn" onclick="saveCredentials()">
+                        <i class="bi bi-save me-1"></i> Save Credentials
+                    </button>
                 </div>
             </div>
         </div>
@@ -595,6 +714,63 @@ DASHBOARD_HTML = """
             navigator.clipboard.writeText(text).then(() => {
                 alert('Copied to clipboard!');
             });
+        }
+
+        async function loadCredentials() {
+            try {
+                const res = await fetch('/api/settings/credentials');
+                if(!res.ok) return;
+                const creds = await res.json();
+                for(const [k, v] of Object.entries(creds)) {
+                    const input = document.getElementById('cred_' + k);
+                    if(input && v) input.value = v;
+                }
+            } catch(e) {}
+        }
+
+        document.getElementById('accountsModal').addEventListener('show.bs.modal', loadCredentials);
+
+        async function saveCredentials() {
+            const btn = document.getElementById('saveCredsBtn');
+            const alertBox = document.getElementById('credsAlert');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+            const payload = {};
+            const keys = [
+                'GEMINI_API_KEY',
+                'FB_PAGE_ID', 'FB_PAGE_ACCESS_TOKEN',
+                'IG_USER_ID', 'IG_ACCESS_TOKEN',
+                'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_AUTHOR_URN',
+                'MAKE_WEBHOOK_URL', 'N8N_WEBHOOK_URL',
+                'TWITTER_API_KEY', 'TWITTER_ACCESS_TOKEN',
+                'PINTEREST_ACCESS_TOKEN', 'PINTEREST_BOARD_ID'
+            ];
+            keys.forEach(k => {
+                const el = document.getElementById('cred_' + k);
+                if(el && el.value.trim() !== '') {
+                    payload[k] = el.value.trim();
+                }
+            });
+
+            try {
+                const res = await fetch('/api/settings/credentials', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                alertBox.style.display = 'block';
+                alertBox.className = 'alert alert-success';
+                alertBox.innerText = 'Credentials saved to .env successfully! Reloading...';
+                setTimeout(() => window.location.reload(), 1500);
+            } catch(e) {
+                alertBox.style.display = 'block';
+                alertBox.className = 'alert alert-danger';
+                alertBox.innerText = 'Error saving credentials: ' + e.message;
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-save me-1"></i> Save Credentials';
+            }
         }
     </script>
 </body>
@@ -859,6 +1035,67 @@ def make_webhook_inbound() -> Any:
             "publish_result": pub_res,
         }
     )
+
+
+@app.route("/api/settings/credentials", methods=["GET"])
+def get_credentials_api() -> Any:
+    env_keys = [
+        "GEMINI_API_KEY",
+        "FB_PAGE_ID", "FB_PAGE_ACCESS_TOKEN",
+        "IG_USER_ID", "IG_ACCESS_TOKEN",
+        "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN",
+        "MAKE_WEBHOOK_URL", "N8N_WEBHOOK_URL",
+        "TWITTER_API_KEY", "TWITTER_ACCESS_TOKEN",
+        "PINTEREST_ACCESS_TOKEN", "PINTEREST_BOARD_ID",
+    ]
+    res = {}
+    for k in env_keys:
+        res[k] = os.getenv(k, "")
+    return jsonify(res)
+
+
+@app.route("/api/settings/credentials", methods=["POST"])
+def update_credentials_api() -> Any:
+    payload = request.get_json() or {}
+    env_path = settings.BASE_DIR / ".env"
+    lines = []
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    existing_keys = set()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            k, _ = stripped.split("=", 1)
+            k = k.strip()
+            existing_keys.add(k)
+            if k in payload:
+                new_lines.append(f"{k}={payload[k]}\n")
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+
+    for k, v in payload.items():
+        if k not in existing_keys:
+            new_lines.append(f"{k}={v}\n")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    for k, v in payload.items():
+        os.environ[k] = v
+        if hasattr(settings, k):
+            setattr(settings, k, v)
+
+    # Re-initialize Gemini client and platform adapters
+    gemini_engine.api_key = os.getenv("GEMINI_API_KEY", "")
+    gemini_engine._client = None
+    platform_manager.__init__()
+
+    return jsonify({"status": "success", "message": "Credentials updated successfully"})
 
 
 def find_available_port(host: str, start_port: int, max_attempts: int = 20) -> int:
